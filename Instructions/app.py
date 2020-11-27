@@ -1,3 +1,4 @@
+#Import dependancies
 import numpy as np
 
 import sqlalchemy
@@ -11,7 +12,9 @@ from flask import Flask, jsonify
 #################################################
 # Database Setup
 #################################################
-engine = create_engine("sqlite:///../Resources/hawaii.sqlite")
+climate_path = "Resources/hawaii.sqlite"
+
+engine = create_engine(f'sqlite:///{climate_path}')
 
 # reflect an existing database into a new model
 Base = automap_base()
@@ -19,7 +22,8 @@ Base = automap_base()
 Base.prepare(engine, reflect=True)
 
 # Save reference to the table
-Passenger = Base.classes.passenger
+Measurement = Base.classes.measurement
+Station = Base.classes.station
 
 #################################################
 # Flask Setup
@@ -32,54 +36,67 @@ app = Flask(__name__)
 #################################################
 
 @app.route("/")
-def welcome():
-    """List all available api routes."""
+def home():
+    """Homepage: List all available api routes."""
     return (
-        f"Available Routes:<br/>"
-        f"/api/v1.0/names<br/>"
-        f"/api/v1.0/passengers"
+        f"Welcome! Here are the available api routes!<br/>"
+        f"/api/v1.0/precipitation<br/>"
+        f"/api/v1.0/stations<br/>"
+        f"/api/v1.0/tobs<br/>"
+        f"/api/v1.0/start<br/>"
+        f"/api/v1.0/start/end<br/>"
     )
 
-
-@app.route("/api/v1.0/names")
-def names():
+@app.route("/api/v1.0/precipitation")
+def precipitation():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    """Return a list of all passenger names"""
-    # Query all passengers
-    results = session.query(Passenger.name).all()
+    """Return a list of last 12M precipitation data"""
+    # Query all precipitation data
+    prcp_val = session.query(Measurement.date, func.avg(Measurement.prcp)).\
+        filter(Measurement.date >= '2016-08-23').\
+        group_by(Measurement.date).\
+        order_by(Measurement.date).all()
 
+    # Close the session
     session.close()
 
-    # Convert list of tuples into normal list
-    all_names = list(np.ravel(results))
+    # Empty list to add the dictionary values to.
+    prcp = []
+    
+    for date, average in prcp_val:
+        prcp_dict = {}
+        prcp_dict['Date'] = date
+        prcp_dict['Average Precipitation'] = average
+        prcp.append(prcp_dict)
+    
+    # jsonify the results
+    return jsonify(prcp)
 
-    return jsonify(all_names)
 
-
-@app.route("/api/v1.0/passengers")
-def passengers():
+@app.route("/api/v1.0/stations")
+def stations():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    """Return a list of passenger data including the name, age, and sex of each passenger"""
+    """Return a list of stations"""
     # Query all passengers
-    results = session.query(Passenger.name, Passenger.age, Passenger.sex).all()
+    active_station = session.query(Station.station, func.count(Measurement.station)).filter(Station.station == Measurement.station).\
+        group_by(Station.station).\
+        order_by(func.count(Measurement.station).desc()).all()
 
     session.close()
 
-    # Create a dictionary from the row data and append to a list of all_passengers
-    all_passengers = []
-    for name, age, sex in results:
-        passenger_dict = {}
-        passenger_dict["name"] = name
-        passenger_dict["age"] = age
-        passenger_dict["sex"] = sex
-        all_passengers.append(passenger_dict)
+    # Empty list to add the dictionary values to.
+    station = []
+    for name in active_station:
+        station_dict = {}
+        station_dict['Name'] = name
+        station.append(station_dict)
 
-    return jsonify(all_passengers)
+    return jsonify(active_station)
 
-
+#Add Debugger to run the app
 if __name__ == '__main__':
     app.run(debug=True)
